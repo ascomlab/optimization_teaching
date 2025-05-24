@@ -1,75 +1,85 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-#####https://induraj2020.medium.com/implementing-particle-swarm-optimization-in-python-c59278bc5846
+from matplotlib.animation import FuncAnimation
+#https://machinelearningmastery.com/a-gentle-introduction-to-particle-swarm-optimization/
+
+def f(x, y):
+    "Objective function"
+    return (x - 3.14) ** 2 + (y - 2.72) ** 2 + np.sin(3 * x + 1.41) + np.sin(4 * y - 1.73)
 
 
+# Compute and plot the function in 3D within [0,5]x[0,5]
+x, y = np.array(np.meshgrid(np.linspace(0, 5, 100), np.linspace(0, 5, 100)))
+z = f(x, y)
 
-# Define the Rastrigin function
-def rastrigin(x):
-    n = len(x)
-    return 10*n + sum([xi**2 - 10*np.cos(2*np.pi*xi) for xi in x])
+# Find the global minimum
+x_min = x.ravel()[z.argmin()]
+y_min = y.ravel()[z.argmin()]
 
-# Define the PSO algorithm
-def pso(cost_func, dim=2, num_particles=30, max_iter=100, w=0.5, c1=1, c2=2):
-    # Initialize particles and velocities
-    particles = np.random.uniform(-5.12, 5.12, (num_particles, dim))
-    velocities = np.zeros((num_particles, dim))
+# Hyper-parameter of the algorithm
+c1 = c2 = 0.1
+w = 0.8
 
-    # Initialize the best positions and fitness values
-    best_positions = np.copy(particles)
-    best_fitness = np.array([cost_func(p) for p in particles])
-    swarm_best_position = best_positions[np.argmin(best_fitness)]
-    swarm_best_fitness = np.min(best_fitness)
+# Create particles
+n_particles = 20
+np.random.seed(100)
+X = np.random.rand(2, n_particles) * 5
+V = np.random.randn(2, n_particles) * 0.1
 
-    # Iterate through the specified number of iterations, updating the velocity and position of each particle at each iteration
-    for i in range(max_iter):
-        # Update velocities
-        r1 = np.random.uniform(0, 1, (num_particles, dim))
-        r2 = np.random.uniform(0, 1, (num_particles, dim))
-        velocities = w * velocities + c1 * r1 * (best_positions - particles) + c2 * r2 * (swarm_best_position - particles)
+# Initialize data
+pbest = X
+pbest_obj = f(X[0], X[1])
+gbest = pbest[:, pbest_obj.argmin()]
+gbest_obj = pbest_obj.min()
 
-        # Update positions
-        particles += velocities
 
-        # Evaluate fitness of each particle
-        fitness_values = np.array([cost_func(p) for p in particles])
+def update():
+    "Function to do one iteration of particle swarm optimization"
+    global V, X, pbest, pbest_obj, gbest, gbest_obj
+    # Update params
+    r1, r2 = np.random.rand(2)
+    V = w * V + c1 * r1 * (pbest - X) + c2 * r2 * (gbest.reshape(-1, 1) - X)
+    X = X + V
+    obj = f(X[0], X[1])
+    pbest[:, (pbest_obj >= obj)] = X[:, (pbest_obj >= obj)]
+    pbest_obj = np.array([pbest_obj, obj]).min(axis=0)
+    gbest = pbest[:, pbest_obj.argmin()]
+    gbest_obj = pbest_obj.min()
 
-        # Update best positions and fitness values
-        improved_indices = np.where(fitness_values < best_fitness)
-        best_positions[improved_indices] = particles[improved_indices]
-        best_fitness[improved_indices] = fitness_values[improved_indices]
-        if np.min(fitness_values) < swarm_best_fitness:
-            swarm_best_position = particles[np.argmin(fitness_values)]
-            swarm_best_fitness = np.min(fitness_values)
 
-    # Return the best solution found by the PSO algorithm
-    return swarm_best_position, swarm_best_fitness
+# Set up base figure: The contour map
+fig, ax = plt.subplots(figsize=(8, 6))
+fig.set_tight_layout(True)
+img = ax.imshow(z, extent=[0, 5, 0, 5], origin='lower', cmap='viridis', alpha=0.5)
+fig.colorbar(img, ax=ax)
+ax.plot([x_min], [y_min], marker='x', markersize=5, color="white")
+contours = ax.contour(x, y, z, 10, colors='black', alpha=0.4)
+ax.clabel(contours, inline=True, fontsize=8, fmt="%.0f")
+pbest_plot = ax.scatter(pbest[0], pbest[1], marker='o', color='black', alpha=0.5)
+p_plot = ax.scatter(X[0], X[1], marker='o', color='blue', alpha=0.5)
+p_arrow = ax.quiver(X[0], X[1], V[0], V[1], color='blue', width=0.005, angles='xy', scale_units='xy', scale=1)
+gbest_plot = plt.scatter([gbest[0]], [gbest[1]], marker='*', s=100, color='black', alpha=0.4)
+ax.set_xlim([0, 5])
+ax.set_ylim([0, 5])
 
-# Define the dimensions of the problem
-dim = 2
 
-# Run the PSO algorithm on the Rastrigin function
-solution, fitness = pso(rastrigin, dim=dim)
+def animate(i):
+    "Steps of PSO: algorithm update and show in plot"
+    title = 'Iteration {:02d}'.format(i)
+    # Update params
+    update()
+    # Set picture
+    ax.set_title(title)
+    pbest_plot.set_offsets(pbest.T)
+    p_plot.set_offsets(X.T)
+    p_arrow.set_offsets(X.T)
+    p_arrow.set_UVC(V[0], V[1])
+    gbest_plot.set_offsets(gbest.reshape(1, -1))
+    return ax, pbest_plot, p_plot, p_arrow, gbest_plot
 
-# Print the solution and fitness value
-print('Solution:', solution)
-print('Fitness:', fitness)
 
-# Create a meshgrid for visualization
-x = np.linspace(-5.12, 5.12, 100)
-y = np.linspace(-5.12, 5.12, 100)
-X, Y = np.meshgrid(x, y)
-Z = rastrigin([X, Y])
+anim = FuncAnimation(fig, animate, frames=list(range(1, 50)), interval=500, blit=False, repeat=True)
+anim.save("PSO.gif", dpi=120, writer="imagemagick")
 
-# Create a 3D plot of the Rastrigin function
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.plot_surface(X, Y, Z, cmap='viridis')
-ax.set_xlabel('x')
-ax.set_ylabel('y')
-ax.set_zlabel('z')
-
-# Plot the solution found by the PSO algorithm
-ax.scatter(solution[0], solution[1], fitness, color='red')
-plt.show()
+print("PSO found best solution at f({})={}".format(gbest, gbest_obj))
+print("Global optimal at f({})={}".format([x_min, y_min], f(x_min, y_min)))
